@@ -24,7 +24,7 @@ int decryptData(char *data, int dataLength)
 		// you will need to reference some of these global variables
 		// (gptrPasswordHash or gPasswordHash), (gptrKey or gkey), gNumRounds
 
-		mov esi, gptrPasswordHash // put the address of gPasswordHash into %esi
+			mov esi, gptrPasswordHash // put the address of gPasswordHash into %esi
 			xor eax, eax //
 			mov al, byte ptr[esi] // store gPassword[0] in %al
 			shl ax, 8 // left shift by 8 (multiply by 256)
@@ -45,60 +45,59 @@ int decryptData(char *data, int dataLength)
 
 			/* LOOP THROUGH ENTIRE data[] -- BYTE BY BYTE */
 		lbl_LOOP :
-		mov dl, byte ptr[edi + ebx] // put the data being encrypted into dl
+			push ebx		// save data position
+
+			mov dl, byte ptr[edi + ebx] //get the current data being manipulated
 			xor dl, byte ptr[esi + eax] // data[ebx] = data[ebx] xor with keyfile[starting_index]
 
-			// Part D rotate 3 bits right
-			ror dl, 3
+			// Part A reverse bit order
+			push ecx		// save previous counter state
 
-			// Part B invert bits 0, 3, 6		0xB5 --> 0xFC
-			mov	DWORD PTR[ebp + 8], 73;
-		mov	eax, DWORD PTR[data]
-			xor	eax, DWORD PTR[ebp + 8]	// XOR with bitMask, 0x49
+			xor ebx, ebx
+			mov cl, 0x08	// set counter to proper size
+		LOOP1:
+			rcr ax, 1		// shift to the right, moving lsb to carry flag
+			rcl bx, 1		// shift to the left, inserting from carry flag to lsb
+			LOOP LOOP1
+			mov edx, ebx	// Reversed bits in ebx, copy to edx
+
+			// Part C swap half nibbles
+			mov eax, edx		//load data to be swapped in eax
+			lea bl, [eax*4]		//shift data to the left 2 and save in bl
+			and bl, 0xCC		// masking to get indexes we want to swap eg. 1100 1100
+			shr al, 2			// shift original data 2 to the right
+			and al, 0x33		// mask remaining indexes eg. 0011 0011
+			or al, bl			// combine and save in al
+			mov dl, al			// extra step for decrypt
 
 			/* Part E, swapping dl with the table value.
 			TO BE DONE: ordering each part correctly.*/
-			mov dl, gEncodeTable[esi]
+			and edx, 0x000000FF			// register had junk data after first byte, cleared them
+			mov dl, gDecodeTable[edx]
 
-			// Part C swap half nibbles
-			mov eax, edx //load data to be swapped in eax
-			lea bl, [eax * 4] //shift data to the left 2 and save in bl
-			and bl, 0xCC // masking to get indexes we want to swap eg. 1100 1100
-			shr al, 2 // shift original data 2 to the right
-			and al, 0x33 // mask remaining indexes eg. 0011 0011
-			or al, bl // combine and save in al
+			// Part B invert bits 0, 3, 6		0xB5 --> 0xFC
+			xor dl, 0x49
 
-			// Part A reverse bit order	- value will be in 'ch'		0xAD --> 0xB5
-			mov eax, data
-			mov cl, 7
-			mov dh, 1	// DH is a 1 which travels in the byte from right to left
-			mov dl, 0
+			// Part D rotate 3 bits right
+			rol dl, 3
 
-		LOOP1: push ax
-			   AND al, dh
-			   push cx
-			   mov cl, dl
-			   shr al, cl	// shift right to get the value as 0 or 1
-			   pop cx
-			   mov bh, al
-			   shl bh, cl	// shift into position - '7' for byte 0, '6' for byte 1...
-			   OR ch, bh	// OR to the final result
-			   DEC cl
-			   INC dl
-			   shl dh, 1
-			   pop ax
-			   cmp dl, 8
-			   je END
-			   jmp LOOP1
+			
 
-		   END :
+			
 
-		mov byte ptr[edi + ebx], dl // put the now decrypted data back into the array
+			
 
-			add ebx, 1 // increment %ebx by 1
-			cmp ebx, ecx // if(ebx > ecx) { end loop }
-			ja lbl_EXIT_END //
-			jmp lbl_LOOP // else { loop }
+
+			/* Restore previous counters/index*/
+			pop ecx
+			pop ebx
+
+			mov byte ptr[edi + ebx], dl //replace the data in array with the now-encrypted data
+
+			add ebx, 1		// increment %ebx by 1
+			cmp ebx, ecx	// if(ebx > ecx) { end loop }
+			ja lbl_EXIT_END
+			jmp lbl_LOOP	// else { loop }
 
 		lbl_EXIT_ZERO_LENGTH :
 		sub ebx, 1 // decrement ebx to -1 to return failure
